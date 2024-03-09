@@ -127,8 +127,10 @@ module.exports = async (req, res) => {
             try {
                 broadcastResult = await helpers.broadcastTransaction(result.transactionHex);
             } catch (err) {
-                throw new Error(`Error broadcasting transaction: ${err.message}`);
-            }
+                // Check if the error object has a response property containing the detailed message
+                const detailedErrorMessage = err.response?.data?.error?.message || err.message;
+                throw new Error(`Error broadcasting transaction: ${detailedErrorMessage}`);
+            }            
             if (broadcastResult.error) {
                 res.status(broadcastResult.status).send({ error: 'Failed to broadcast the transaction.' });
                 return;
