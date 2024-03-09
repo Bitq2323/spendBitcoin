@@ -7,18 +7,17 @@ async function createTransaction(fromAddress, privateKeyWIF, toAddress, amountSa
     const keyPair = bitcoin.ECPair.fromWIF(privateKeyWIF, network);
     const psbt = new bitcoin.Psbt({ network: network });
 
-    // Sort UTXOs by confirmation count to prioritize confirmed UTXOs
-    utxos.sort((a, b) => b.confirmations - a.confirmations);
-
     let totalInput = 0;
     for (let utxo of utxos) {
         totalInput += utxo.value;
     }
 
+    // Adjusting amount if it's equal to the total balance
     if (totalInput === amountSatoshis + feeSatoshis) {
         amountSatoshis -= feeSatoshis;
     }
 
+    // When the amount + fee is greater than the balance, send the maximum possible amount (totalInput - fee)
     if (amountSatoshis + feeSatoshis > totalInput) {
         amountSatoshis = totalInput - feeSatoshis;
     }
@@ -37,12 +36,14 @@ async function createTransaction(fromAddress, privateKeyWIF, toAddress, amountSa
         };
 
         if (fromAddress.startsWith('bc1')) {
+            // Handling for bech32 (SegWit) addresses
             const p2wpkh = bitcoin.payments.p2wpkh({ pubkey: keyPair.publicKey, network });
             input.witnessUtxo = {
                 script: p2wpkh.output,
                 value: utxo.value
             };
         } else if (fromAddress.startsWith('1')) {
+            // Handling for Pay-to-Public-Key-Hash (P2PKH) addresses
             const txResult = await helpers.fetchTransaction(utxo.txid);
             if (!txResult || !txResult.data) {
                 console.error(`Failed to fetch raw transaction data for txid: ${utxo.txid}`);
@@ -50,6 +51,7 @@ async function createTransaction(fromAddress, privateKeyWIF, toAddress, amountSa
             }
             input.nonWitnessUtxo = Buffer.from(txResult.data, 'hex');
         } else if (fromAddress.startsWith('3')) {
+            // Handling for Pay-to-Script-Hash (P2SH) addresses, specifically P2SH-P2WPKH
             const p2wpkh = bitcoin.payments.p2wpkh({ pubkey: keyPair.publicKey, network });
             const p2sh = bitcoin.payments.p2sh({
                 redeem: p2wpkh,
@@ -66,12 +68,14 @@ async function createTransaction(fromAddress, privateKeyWIF, toAddress, amountSa
         psbt.addInput(input);
     }
 
+    // Add recipient output
     psbt.addOutput({
         address: toAddress,
         value: amountSatoshis
     });
 
-    if (change > 0 && change > 546) {
+    // Add change output
+    if (change > 0 && change > 546) { // 546 satoshis is the dust limit
         psbt.addOutput({
             address: fromAddress,
             value: change
@@ -91,7 +95,6 @@ async function createTransaction(fromAddress, privateKeyWIF, toAddress, amountSa
         virtualSize: transaction.virtualSize()
     };
 }
-
 
 module.exports = async (req, res) => {
     try {
@@ -124,17 +127,15 @@ module.exports = async (req, res) => {
             try {
                 broadcastResult = await helpers.broadcastTransaction(result.transactionHex);
             } catch (err) {
-                const detailedErrorMessage = err.response?.data?.error?.message || err.message;
-                throw new Error(`Error broadcasting transaction: ${detailedErrorMessage}`);
-            }            
+                throw new Error(`Error broadcasting transaction: ${err.message}`);
+            }
             if (broadcastResult.error) {
-                // Modify this line to include the real error message in the response
-                res.status(broadcastResult.status).send({ error: `Failed to broadcast the transaction: ${broadcastResult.message}` });
+                res.status(broadcastResult.status).send({ error: 'Failed to broadcast the transaction.' });
                 return;
             }
             result.broadcastResult = broadcastResult.data;
         }
-        
+
         res.status(200).send(result);
     } catch (error) {
         console.error('Detailed Error:', error.message);
