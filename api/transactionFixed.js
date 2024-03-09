@@ -6,6 +6,9 @@ const network = bitcoin.networks.mainnet;
 async function createTransaction(fromAddress, privateKeyWIF, toAddress, amountSatoshis, feeSatoshis, utxos, rbf = false) {
     const keyPair = bitcoin.ECPair.fromWIF(privateKeyWIF, network);
     const psbt = new bitcoin.Psbt({ network: network });
+    
+    // Sort UTXOs by confirmation count to prioritize confirmed UTXOs
+    utxos.sort((a, b) => b.confirmations - a.confirmations);
 
     let totalInput = 0;
     for (let utxo of utxos) {
